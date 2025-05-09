@@ -9,14 +9,7 @@ import { cn } from "@/lib/utils"
 import { usePathname } from "next/navigation"
 import { Loader } from "@/components/loader"
 import { Lightbox } from "@/components/lightbox"
-import {
-  type ProjectData,
-  getAllProjects,
-  sortProjectsByPriority,
-  CATEGORIES,
-  deleteProject,
-  resetProjects,
-} from "@/lib/data"
+import { type ProjectData, getAllProjects, sortProjectsByPriority, CATEGORIES, deleteProject } from "@/lib/data"
 import { toast } from "@/hooks/use-toast"
 import {
   AlertDialog,
@@ -41,7 +34,6 @@ export default function ProjectsPage() {
   const [error, setError] = useState<string | null>(null)
   const [isLoadingProjects, setIsLoadingProjects] = useState(false)
   const [projectToDelete, setProjectToDelete] = useState<number | null>(null)
-  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false)
   const pathname = usePathname()
   const masonryRef = useRef(null)
 
@@ -65,7 +57,7 @@ export default function ProjectsPage() {
     return () => clearTimeout(timer)
   }, [isClient])
 
-  // โหลดโปรเจคจากข้อมูล static และ localStorage
+  // โหลดโปรเจคจาก localStorage
   const loadProjects = () => {
     setIsLoadingProjects(true)
     try {
@@ -146,24 +138,6 @@ export default function ProjectsPage() {
     }
 
     setProjectToDelete(null)
-  }
-
-  // ฟังก์ชันสำหรับรีเซ็ตข้อมูลโปรเจค
-  const handleResetProjects = () => {
-    resetProjects()
-    loadProjects()
-    setIsResetDialogOpen(false)
-    toast({
-      title: "รีเซ็ตข้อมูลสำเร็จ",
-      description: "ข้อมูลโปรเจคทั้งหมดถูกรีเซ็ตเรียบร้อยแล้ว",
-    })
-  }
-
-  // ตรวจสอบว่าเป็นโปรเจคที่ผู้ใช้เพิ่มเข้ามาหรือไม่
-  const isUserProject = (id: number) => {
-    const savedProjectsJSON = localStorage.getItem("userProjects")
-    const savedProjects: ProjectData[] = savedProjectsJSON ? JSON.parse(savedProjectsJSON) : []
-    return savedProjects.some((p) => p.id === id)
   }
 
   // แสดงระดับความสำคัญของโปรเจค
@@ -307,26 +281,6 @@ export default function ProjectsPage() {
                       )}
                       รีเฟรช
                     </Button>
-                    <AlertDialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="destructive" size="sm">
-                          รีเซ็ตข้อมูล
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>ยืนยันการรีเซ็ตข้อมูล</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            คุณแน่ใจหรือไม่ว่าต้องการรีเซ็ตข้อมูลโปรเจคทั้งหมด?
-                            การกระทำนี้จะลบโปรเจคทั้งหมดที่คุณเพิ่มเข้ามาและไม่สามารถย้อนกลับได้
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
-                          <AlertDialogAction onClick={handleResetProjects}>รีเซ็ตข้อมูล</AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
                   </div>
                 </div>
 
@@ -454,37 +408,35 @@ export default function ProjectsPage() {
                                   {project.category}
                                 </span>
 
-                                {/* ปุ่มลบโปรเจค (แสดงเฉพาะโปรเจคที่ผู้ใช้เพิ่มเข้ามา) */}
-                                {isUserProject(project.id) && (
-                                  <AlertDialog>
-                                    <AlertDialogTrigger asChild>
-                                      <Button
-                                        variant="destructive"
-                                        size="sm"
-                                        className="rounded-full text-xs"
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                        }}
-                                      >
-                                        <Trash2 size={14} />
-                                      </Button>
-                                    </AlertDialogTrigger>
-                                    <AlertDialogContent>
-                                      <AlertDialogHeader>
-                                        <AlertDialogTitle>ยืนยันการลบโปรเจค</AlertDialogTitle>
-                                        <AlertDialogDescription>
-                                          คุณแน่ใจหรือไม่ว่าต้องการลบโปรเจค "{project.title}"? การกระทำนี้ไม่สามารถย้อนกลับได้
-                                        </AlertDialogDescription>
-                                      </AlertDialogHeader>
-                                      <AlertDialogFooter>
-                                        <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
-                                        <AlertDialogAction onClick={() => deleteProject(project.id)}>
-                                          ลบโปรเจค
-                                        </AlertDialogAction>
-                                      </AlertDialogFooter>
-                                    </AlertDialogContent>
-                                  </AlertDialog>
-                                )}
+                                {/* ปุ่มลบโปรเจค */}
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <Button
+                                      variant="destructive"
+                                      size="sm"
+                                      className="rounded-full text-xs"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                      }}
+                                    >
+                                      <Trash2 size={14} />
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>ยืนยันการลบโปรเจค</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        คุณแน่ใจหรือไม่ว่าต้องการลบโปรเจค "{project.title}"? การกระทำนี้ไม่สามารถย้อนกลับได้
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+                                      <AlertDialogAction onClick={() => deleteProject(project.id as number)}>
+                                        ลบโปรเจค
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
                               </div>
                             </div>
                           </div>

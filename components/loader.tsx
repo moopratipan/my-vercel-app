@@ -55,7 +55,7 @@ export function Loader() {
           }}
           className="text-lg font-light tracking-widest uppercase"
         >
-          Loading
+          Pratipan Loading
         </motion.p>
       </motion.div>
     </div>
