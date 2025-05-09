@@ -4,29 +4,52 @@ import { useState, useEffect, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { Menu, X, ExternalLink, Settings, AlertCircle, Plus, RefreshCw } from "lucide-react"
+import { Menu, X, ExternalLink, AlertCircle, RefreshCw, Plus, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { usePathname } from "next/navigation"
 import { Loader } from "@/components/loader"
 import { Lightbox } from "@/components/lightbox"
-import { DatabaseStatus } from "@/components/database-status"
-import type { ProjectData } from "@/components/project-form"
-import { initializeDatabase, fetchAllProjects, resetDatabaseToDefault } from "@/lib/database-client"
+import {
+  type ProjectData,
+  getAllProjects,
+  sortProjectsByPriority,
+  CATEGORIES,
+  deleteProject,
+  resetProjects,
+} from "@/lib/data"
 import { toast } from "@/hooks/use-toast"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
 export default function ProjectsPage() {
   const [loading, setLoading] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
   const [filter, setFilter] = useState("all")
   const [projects, setProjects] = useState<ProjectData[]>([])
-  const [shuffledProjects, setShuffledProjects] = useState<ProjectData[]>([])
+  const [sortedProjects, setSortedProjects] = useState<ProjectData[]>([])
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState(0)
   const [error, setError] = useState<string | null>(null)
-  const [isResetting, setIsResetting] = useState(false)
   const [isLoadingProjects, setIsLoadingProjects] = useState(false)
+  const [projectToDelete, setProjectToDelete] = useState<number | null>(null)
+  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false)
   const pathname = usePathname()
   const masonryRef = useRef(null)
+
+  // ตรวจสอบว่า localStorage พร้อมใช้งานหรือไม่
+  const [isClient, setIsClient] = useState(false)
+  useEffect(() => {
+    setIsClient(true)
+  }, [])
 
   // โหลดโปรเจคเมื่อหน้าถูกโหลด
   useEffect(() => {
@@ -34,26 +57,19 @@ export default function ProjectsPage() {
       setLoading(false)
     }, 1000)
 
-    // เริ่มต้นฐานข้อมูล
-    const initDb = async () => {
-      try {
-        await initializeDatabase()
-        await loadProjects()
-      } catch (error) {
-        console.error("Error initializing database:", error)
-        setError("เกิดข้อผิดพลาดในการเชื่อมต่อกับฐานข้อมูล")
-      }
+    // โหลดข้อมูล
+    if (isClient) {
+      loadProjects()
     }
 
-    initDb()
     return () => clearTimeout(timer)
-  }, [])
+  }, [isClient])
 
-  // โหลดโปรเจคจากฐานข้อมูล
-  const loadProjects = async () => {
+  // โหลดโปรเจคจากข้อมูล static และ localStorage
+  const loadProjects = () => {
     setIsLoadingProjects(true)
     try {
-      const allProjects = await fetchAllProjects()
+      const allProjects = getAllProjects()
       console.log("Loaded projects:", allProjects)
       setProjects(allProjects)
       setError(null)
@@ -65,32 +81,20 @@ export default function ProjectsPage() {
     }
   }
 
-  // จัดเรียงและสลับตำแหน่งโปรเจคเมื่อโหลดหน้าหรือเมื่อโปรเจคเปลี่ยนแปลง
+  // จัดเรียงโปรเจคตามระดับความสำคัญเมื่อโหลดหน้าหรือเมื่อโปรเจคเปลี่ยนแปลง
   useEffect(() => {
-    console.log("Sorting and shuffling projects:", projects)
+    console.log("Sorting projects by priority:", projects)
 
     if (projects.length === 0) {
       console.log("No projects to display")
-      setShuffledProjects([])
+      setSortedProjects([])
       return
     }
 
-    // แยกโปรเจคตามลำดับความสำคัญ
-    const priorityProjects = projects.filter((p) => p.priority > 0).sort((a, b) => a.priority - b.priority)
-    console.log("Priority projects:", priorityProjects)
-
-    // สุ่มโปรเจคที่ไม่มีลำดับความสำคัญ
-    const randomProjects = [...projects.filter((p) => p.priority === 0)]
-    for (let i = randomProjects.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1))
-      ;[randomProjects[i], randomProjects[j]] = [randomProjects[j], randomProjects[i]]
-    }
-    console.log("Random projects:", randomProjects)
-
-    // รวมโปรเจคที่มีลำดับความสำคัญกับโปรเจคที่สุ่ม
-    const combined = [...priorityProjects, ...randomProjects]
-    console.log("Final shuffled projects:", combined)
-    setShuffledProjects(combined)
+    // เรียงลำดับโปรเจคตามระดับความสำคัญ
+    const sorted = sortProjectsByPriority(projects)
+    console.log("Sorted projects:", sorted)
+    setSortedProjects(sorted)
   }, [projects])
 
   const toggleMenu = () => {
@@ -104,54 +108,81 @@ export default function ProjectsPage() {
     { name: "Contact", path: "/contact" },
   ]
 
-  const filters = [
-    "all",
-    "Promotional Graphics",
-    "Social Media Announcements",
-    "News & Updates Graphics",
-    "Website Projects",
-    "UX/UI Design",
-    "Other Designs",
-  ]
+  const filters = ["all", ...CATEGORIES]
 
   const filteredProjects =
-    filter === "all" ? shuffledProjects : shuffledProjects.filter((project) => project.category === filter)
+    filter === "all" ? sortedProjects : sortedProjects.filter((project) => project.category === filter)
 
   const openLightbox = (index: number) => {
     setLightboxIndex(index)
     setLightboxOpen(true)
   }
 
-  // ฟังก์ชันสำหรับรีเซ็ตโปรเจคเป็นค่าเริ่มต้น
-  const handleResetProjects = async () => {
-    setIsResetting(true)
-    try {
-      const result = await resetDatabaseToDefault()
-      if (result.success) {
-        await loadProjects()
-        toast({
-          title: "รีเซ็ตฐานข้อมูลสำเร็จ",
-          description: "ฐานข้อมูลถูกรีเซ็ตกลับเป็นค่าเริ่มต้นเรียบร้อยแล้ว",
-        })
-      } else {
-        setError("ไม่สามารถรีเซ็ตฐานข้อมูลได้")
-        toast({
-          title: "เกิดข้อผิดพลาด",
-          description: "ไม่สามารถรีเซ็ตฐานข้อมูลได้",
-          variant: "destructive",
-        })
-      }
-    } catch (error) {
-      console.error("Error resetting projects:", error)
-      setError("ไม่สามารถรีเซ็ตฐานข้อมูลได้ กรุณาลองใหม่อีกครั้ง")
+  // ฟังก์ชันสำหรับลบโปรเจค
+  const handleDeleteProject = (id: number) => {
+    setProjectToDelete(id)
+  }
+
+  // ฟังก์ชันสำหรับยืนยันการลบโปรเจค
+  const confirmDeleteProject = () => {
+    if (projectToDelete === null) return
+
+    const success = deleteProject(projectToDelete)
+
+    if (success) {
       toast({
-        title: "เกิดข้อผิดพลาด",
-        description: "ไม่สามารถรีเซ็ตฐานข้อมูลได้",
+        title: "ลบโปรเจคสำเร็จ",
+        description: "โปรเจคถูกลบออกจากระบบเรียบร้อยแล้ว",
+      })
+
+      // โหลดข้อมูลใหม่
+      loadProjects()
+    } else {
+      toast({
+        title: "ไม่สามารถลบโปรเจคได้",
+        description: "โปรเจคนี้เป็นโปรเจคเริ่มต้นหรือไม่พบในระบบ",
         variant: "destructive",
       })
-    } finally {
-      setIsResetting(false)
     }
+
+    setProjectToDelete(null)
+  }
+
+  // ฟังก์ชันสำหรับรีเซ็ตข้อมูลโปรเจค
+  const handleResetProjects = () => {
+    resetProjects()
+    loadProjects()
+    setIsResetDialogOpen(false)
+    toast({
+      title: "รีเซ็ตข้อมูลสำเร็จ",
+      description: "ข้อมูลโปรเจคทั้งหมดถูกรีเซ็ตเรียบร้อยแล้ว",
+    })
+  }
+
+  // ตรวจสอบว่าเป็นโปรเจคที่ผู้ใช้เพิ่มเข้ามาหรือไม่
+  const isUserProject = (id: number) => {
+    const savedProjectsJSON = localStorage.getItem("userProjects")
+    const savedProjects: ProjectData[] = savedProjectsJSON ? JSON.parse(savedProjectsJSON) : []
+    return savedProjects.some((p) => p.id === id)
+  }
+
+  // แสดงระดับความสำคัญของโปรเจค
+  const getPriorityLabel = (priority: number) => {
+    if (priority === 0) return "ไม่มี"
+    if (priority === 1) return "ต่ำ"
+    if (priority === 2) return "ปานกลาง"
+    if (priority === 3) return "สูง"
+    if (priority === 4) return "สูงมาก"
+    if (priority === 5) return "สูงสุด"
+    return "ไม่ระบุ"
+  }
+
+  if (!isClient) {
+    return (
+      <div className="container mx-auto px-4 py-8 flex justify-center items-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div>
+      </div>
+    )
   }
 
   return (
@@ -262,27 +293,41 @@ export default function ProjectsPage() {
                   </motion.h1>
 
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={handleResetProjects} disabled={isResetting}>
-                      {isResetting ? (
+                    <Link href="/add-project">
+                      <Button variant="default" size="sm">
+                        <Plus className="mr-2 h-4 w-4" />
+                        เพิ่มโปรเจค
+                      </Button>
+                    </Link>
+                    <Button variant="outline" size="sm" onClick={loadProjects} disabled={isLoadingProjects}>
+                      {isLoadingProjects ? (
                         <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
                       ) : (
                         <RefreshCw className="mr-2 h-4 w-4" />
                       )}
-                      รีเซ็ตฐานข้อมูล
+                      รีเฟรช
                     </Button>
-
-                    <Button variant="outline" size="sm" asChild>
-                      <Link href="/admin">
-                        <Settings className="mr-2 h-4 w-4" />
-                        จัดการฐานข้อมูล
-                      </Link>
-                    </Button>
+                    <AlertDialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="destructive" size="sm">
+                          รีเซ็ตข้อมูล
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>ยืนยันการรีเซ็ตข้อมูล</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            คุณแน่ใจหรือไม่ว่าต้องการรีเซ็ตข้อมูลโปรเจคทั้งหมด?
+                            การกระทำนี้จะลบโปรเจคทั้งหมดที่คุณเพิ่มเข้ามาและไม่สามารถย้อนกลับได้
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+                          <AlertDialogAction onClick={handleResetProjects}>รีเซ็ตข้อมูล</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </div>
-                </div>
-
-                {/* Database Status */}
-                <div className="mb-6">
-                  <DatabaseStatus showDetails={false} />
                 </div>
 
                 {/* Error Message */}
@@ -340,12 +385,12 @@ export default function ProjectsPage() {
                     <p className="text-gray-400 mb-8">
                       {filter === "all" ? "ยังไม่มีโปรเจคใดๆ ในฐานข้อมูล" : `ไม่พบโปรเจคในหมวดหมู่ "${filter}"`}
                     </p>
-                    <Button asChild>
-                      <Link href="/admin">
+                    <Link href="/add-project">
+                      <Button>
                         <Plus className="mr-2 h-4 w-4" />
                         เพิ่มโปรเจคใหม่
-                      </Link>
-                    </Button>
+                      </Button>
+                    </Link>
                   </motion.div>
                 )}
 
@@ -360,12 +405,22 @@ export default function ProjectsPage() {
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: -20 }}
                           transition={{ duration: 0.5, delay: index * 0.1 }}
-                          className="break-inside-avoid mb-6 group relative overflow-hidden rounded-lg"
+                          className={cn(
+                            "break-inside-avoid mb-6 group relative overflow-hidden rounded-lg",
+                            project.priority > 0 && "ring-2 ring-offset-2 ring-offset-black ring-white/20",
+                          )}
                         >
                           <div
                             className="relative cursor-pointer"
                             onClick={() => openLightbox(filteredProjects.indexOf(project))}
                           >
+                            {/* แสดงระดับความสำคัญ */}
+                            {project.priority > 0 && (
+                              <div className="absolute top-2 right-2 z-10 bg-black/70 text-white text-xs px-2 py-1 rounded-full">
+                                ความสำคัญ: {getPriorityLabel(project.priority)}
+                              </div>
+                            )}
+
                             <img
                               src={project.image.src || "/placeholder.svg"}
                               alt={project.image.alt || project.title}
@@ -398,6 +453,38 @@ export default function ProjectsPage() {
                                 <span className="text-xs text-gray-400 capitalize px-2 py-1 bg-white/10 rounded-full">
                                   {project.category}
                                 </span>
+
+                                {/* ปุ่มลบโปรเจค (แสดงเฉพาะโปรเจคที่ผู้ใช้เพิ่มเข้ามา) */}
+                                {isUserProject(project.id) && (
+                                  <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                      <Button
+                                        variant="destructive"
+                                        size="sm"
+                                        className="rounded-full text-xs"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                        }}
+                                      >
+                                        <Trash2 size={14} />
+                                      </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                      <AlertDialogHeader>
+                                        <AlertDialogTitle>ยืนยันการลบโปรเจค</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                          คุณแน่ใจหรือไม่ว่าต้องการลบโปรเจค "{project.title}"? การกระทำนี้ไม่สามารถย้อนกลับได้
+                                        </AlertDialogDescription>
+                                      </AlertDialogHeader>
+                                      <AlertDialogFooter>
+                                        <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+                                        <AlertDialogAction onClick={() => deleteProject(project.id)}>
+                                          ลบโปรเจค
+                                        </AlertDialogAction>
+                                      </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                  </AlertDialog>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -459,6 +546,22 @@ export default function ProjectsPage() {
                 onClose={() => setLightboxOpen(false)}
               />
             )}
+
+            {/* Alert Dialog สำหรับยืนยันการลบโปรเจค */}
+            <AlertDialog open={projectToDelete !== null} onOpenChange={(open) => !open && setProjectToDelete(null)}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>ยืนยันการลบโปรเจค</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    คุณแน่ใจหรือไม่ว่าต้องการลบโปรเจคนี้? การกระทำนี้ไม่สามารถย้อนกลับได้
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel onClick={() => setProjectToDelete(null)}>ยกเลิก</AlertDialogCancel>
+                  <AlertDialogAction onClick={confirmDeleteProject}>ลบโปรเจค</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </>
         )}
       </AnimatePresence>
